@@ -1,3 +1,5 @@
+This is only for selfstudy backup uses, please find orginal link in the below text. 
+
 # Seq2Seq Wrapper for Tensorflow
 
 ![](https://img.shields.io/badge/python-3-brightgreen.svg) ![](https://img.shields.io/badge/tensorflow-0.12.0-yellowgreen.svg)
