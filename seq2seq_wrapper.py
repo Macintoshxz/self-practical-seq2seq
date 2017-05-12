@@ -46,6 +46,18 @@ class Seq2Seq(object):
             basic_cell = tf.contrib.rnn.core_rnn_cell.DropoutWrapper(
                     tf.contrib.rnn.core_rnn_cell.BasicLSTMCell(emb_dim, state_is_tuple=True),   # Basic cells
                     output_keep_prob=self.keep_prob)
+
+                                                                        # state_is_tuple: If True, accepted and returned states are 2-tuples of the c_state and m_state,
+                                                                        # which is cell state and memory state, 相当于c和h。 these tensor代表了combined internal state of cell
+                                                                        # and should be passed together. 这种是新的tf的工作方式，用tuples， 比较快。
+                                                                        # 
+                                                                        # 老的方式 是If False, they are concatenated along the column axis. The latter behavior will 
+                                                                        # soon be deprecated.                                                                        # 在Dataanalysis的ipnb里，留了一个简单的例子来解释 state_is_tuple为True和False的区别，总结来说是：
+
+                                                                        # state = tf.zeros([1,LSTM_CELL_SIZE*2])
+                                                                        # 新的方式是用两个长度为2的tuple/tensors来表示state
+                                                                        # 旧的方式是用一个长度为4的tensor来表示 [0,0,0,0] becomes ([0,0],[0,0])
+
             # stack LSTM cells together : n layered model
             stacked_lstm = tf.contrib.rnn.core_rnn_cell.MultiRNNCell([basic_cell]*num_layers, state_is_tuple=True)
 
@@ -136,7 +148,7 @@ class Seq2Seq(object):
             # create a session
             sess = tf.Session()
             # init all variables
-            sess.run(tf.global_variables_initializer())
+            sess.run(tf.global_variables_initializer())            #这一步是必须的， 初始化
 
         sys.stdout.write('\n<log> Training started </log>\n')
         # run M epochs
