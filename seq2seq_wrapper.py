@@ -23,7 +23,7 @@ class Seq2Seq(object):
         #  attach any part of the graph that needs to be exposed, to the self
         def __graph__():
 
-            # placeholders, create a bunch of placeholders for feeding input sequences, labels and decoder inputs. 
+            # placeholders, create a bunch of placeholders for feeding input sequences, labels and decoder inputs.The labels correspond to the real output sequence. 
             tf.reset_default_graph()
             #  encoder inputs : list of indices of length xseq_len
             self.enc_ip = [ tf.placeholder(shape=[None,],                       #  Inserts a placeholder for a tensor that will be always fed. fed using sess.run()
@@ -36,7 +36,7 @@ class Seq2Seq(object):
                             name='ei_{}'.format(t)) for t in range(yseq_len) ]
 
             #  decoder inputs : 'GO' + [ y1, y2,  ... y_t-1 ]
-            self.dec_ip = [ tf.zeros_like(self.enc_ip[0], dtype=tf.int64, name='GO') ] + self.labels[:-1]
+            self.dec_ip = [ tf.zeros_like(self.enc_ip[0], dtype=tf.int64, name='GO') ] + self.labels[:-1] # Decoder
 
 
             # Basic LSTM cell wrapped in Dropout Wrapper
@@ -52,18 +52,20 @@ class Seq2Seq(object):
                                                                         # and should be passed together. 这种是新的tf的工作方式，用tuples， 比较快。
                                                                         # 
                                                                         # 老的方式 是If False, they are concatenated along the column axis. The latter behavior will 
-                                                                        # soon be deprecated.                                                                        # 在Dataanalysis的ipnb里，留了一个简单的例子来解释 state_is_tuple为True和False的区别，总结来说是：
+                                                                        # soon be deprecated.                                                                        
+                                                                        # 在Dataanalysis的ipnb里，留了一个简单的例子来解释 state_is_tuple为True和False的区别，总结来说是：
 
                                                                         # state = tf.zeros([1,LSTM_CELL_SIZE*2])
                                                                         # 新的方式是用两个长度为2的tuple/tensors来表示state
                                                                         # 旧的方式是用一个长度为4的tensor来表示 [0,0,0,0] becomes ([0,0],[0,0])
 
             # stack LSTM cells together : n layered model
-            stacked_lstm = tf.contrib.rnn.core_rnn_cell.MultiRNNCell([basic_cell]*num_layers, state_is_tuple=True)
+            stacked_lstm = tf.contrib.rnn.core_rnn_cell.MultiRNNCell([basic_cell]*num_layers, state_is_tuple=True) #The LSTM cellsare stacked together to form a stacked LSTM,
+                                                                                                                   # using MultiRNNCell
 
 
-            # for parameter sharing between training model
-            #  and testing model
+            # for parameter sharing between training model 
+            #  and testing model, does word embedding internally
             with tf.variable_scope('decoder') as scope:
                 # build the seq2seq model 
                 #  inputs : encoder, decoder inputs, LSTM cell type, vocabulary sizes, embedding dimensions
@@ -75,10 +77,12 @@ class Seq2Seq(object):
                 #  to the next timestep
                 self.decode_outputs_test, self.decode_states_test = tf.contrib.legacy_seq2seq.embedding_rnn_seq2seq(
                     self.enc_ip, self.dec_ip, stacked_lstm, xvocab_size, yvocab_size,emb_dim,
-                    feed_previous=True)
+                    feed_previous=True)      # feed_previous  causes the decoder of the model to use the output of previous timestep as input to the current timestep, 
+                                             # while during training, the input to a timestep (in the decoder) is taken from the labels sequence (the real output sequence).
+
 
             # now, for training,
-            #  build loss function
+            #  build loss function ( high level function sequence_loss) to get the expression for loss. Then, we build a train operation that minimizes the loss.
 
             # weighted loss
             #  TODO : add parameter hint
@@ -111,7 +115,7 @@ class Seq2Seq(object):
         # get batches
         batchX, batchY = train_batch_gen.__next__()
         # build feed
-        feed_dict = self.get_feed(batchX, batchY, keep_prob=0.5)
+        feed_dict = self.get_feed(batchX, batchY, keep_prob=0.5) # A dropout of 0.5 is used during training
         _, loss_v = sess.run([self.train_op, self.loss], feed_dict)
         return loss_v
 
@@ -119,7 +123,7 @@ class Seq2Seq(object):
         # get batches
         batchX, batchY = eval_batch_gen.__next__()
         # build feed
-        feed_dict = self.get_feed(batchX, batchY, keep_prob=1.)
+        feed_dict = self.get_feed(batchX, batchY, keep_prob=1.) # NO Dropout
         loss_v, dec_op_v = sess.run([self.loss, self.decode_outputs_test], feed_dict)
         # dec_op_v is a list; also need to transpose 0,1 indices 
         #  (interchange batch_size and timesteps dimensions
@@ -151,7 +155,12 @@ class Seq2Seq(object):
             sess.run(tf.global_variables_initializer())            #这一步是必须的， 初始化
 
         sys.stdout.write('\n<log> Training started </log>\n')
+
         # run M epochs
+        # one epoch = one forward pass and one backward pass of all the training examples
+        # number of iterations = number of passes, each pass using [batch size] number of examples.
+        # Example: if you have 1000 training examples, and your batch size is 500, then it will take 2 iterations to complete 1 epoch.
+
         for i in range(self.epochs):
             try:
                 self.train_batch(sess, train_set)
@@ -169,7 +178,7 @@ class Seq2Seq(object):
                 self.session = sess
                 return sess
 
-    def restore_last_session(self):
+    def restore_last_session(self): 
         saver = tf.train.Saver()
         # create a session
         sess = tf.Session()
@@ -181,7 +190,7 @@ class Seq2Seq(object):
         # return to user
         return sess
 
-    # prediction
+    # prediction                # does a forward step and returns the indices of most probable words emitted by the model
     def predict(self, sess, X):
         feed_dict = {self.enc_ip[t]: X[t] for t in range(self.xseq_len)}
         feed_dict[self.keep_prob] = 1.
